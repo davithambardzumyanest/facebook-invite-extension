@@ -56,6 +56,26 @@ if (window.hasRun) {
     };
 
     // --- CORE LOGIC ---
+    async function sendErrorWebhook(errorMessage) {
+        const webhookUrl = 'https://n8n.esterox.com/webhook/abaf7792-d685-4554-b197-c7d0be5a222d';
+        try {
+            await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: errorMessage,
+                    url: window.location.href,
+                    timestamp: new Date().toISOString(),
+                }),
+            });
+            console.log('Error webhook sent successfully.');
+        } catch (error) {
+            console.error('Failed to send error webhook:', error);
+        }
+    }
+
     async function processPosts() {
         if (state.isRunning) return;
         Object.assign(state, { isRunning: true, stopRequested: false, currentPost: 0, invitesSent: 0 });
@@ -82,6 +102,7 @@ if (window.hasRun) {
                 await sleep(1200);
 
                 const posts = getAllPosts();
+
                 for (const post of posts) {
                     if (state.stopRequested || state.invitesSent >= state.settings.inviteCount || state.currentPost >= state.totalPosts) break;
                     if (!isVisible(post) || processedElements.has(post)) continue;
@@ -99,9 +120,17 @@ if (window.hasRun) {
                     }
 
                     let invitesSentForPost = 0;
-                    for (let s = 0; s < 50 && !state.stopRequested && state.invitesSent < state.settings.inviteCount && invitesSentForPost < state.settings.maxInvitesPerPost; s++) {
+                    let modalText = modal.textContent;
+                    let newModalText = modal.textContent;
+
+                    for (let s = 0; s < 5 && !state.stopRequested && state.invitesSent < state.settings.inviteCount && invitesSentForPost < state.settings.maxInvitesPerPost; s++) {
                         modal.scrollTop = modal.scrollHeight;
-                        await sleep(240);
+                        await sleep(480);
+                        newModalText = getElementsByXPath(state.selectors.modal)[0].textContent
+                        if (newModalText !== modalText) {
+                            s = 0
+                            modalText = newModalText
+                        }
 
                         const inviteBtns = Array.from(modal.querySelectorAll('span')).filter(span => span.textContent.trim() === 'Invite');
                         for (const btn of inviteBtns) {
@@ -123,7 +152,16 @@ if (window.hasRun) {
                     state.currentPost++;
                 }
             }
+
+
         } catch (error) {
+
+            if (processedElements.length === 0) {
+                if (window.location.hostname.includes('facebook.com')) {
+                    await sendErrorWebhook('No posts found on the page.');
+                }
+            }
+
             console.error('Error during post processing:', error);
         } finally {
             state.isRunning = false;
