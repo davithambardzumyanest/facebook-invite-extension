@@ -15,12 +15,29 @@ if (window.hasRun) {
             delay: 2,
             maxInvitesPerPost: 5,
         },
+        selectors: null,
     };
 
     // --- UTILITY FUNCTIONS ---
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    async function fetchSelectors() {
+        try {
+            const response = await fetch('https://raw.githubusercontent.com/davithambardzumyanest/facebook-invite-extension/main/selectrors.json');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            state.selectors = await response.json();
+            console.log('Selectors loaded:', state.selectors);
+        } catch (error) {
+            console.error('Failed to fetch selectors:', error);
+            // Fallback or error handling
+            state.selectors = null; // Ensure it's null if fetch fails
+        }
+    }
+
     const getElementsByXPath = (xpath, context = document) => {
+        if (!xpath) return [];
         const result = document.evaluate(xpath, context, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
         const elements = [];
         for (let i = 0; i < result.snapshotLength; i++) {
@@ -30,9 +47,7 @@ if (window.hasRun) {
     };
 
     function getAllPosts() {
-        return getElementsByXPath(
-            '//div/div/div/div/div/div/div/div/div/div/div/div[13]/div/div/div[5]/div[@data-visualcompletion="ignore-dynamic"]/div/div/div/div[1]/div/div[1]/div/span/div/span[2]/span/span'
-        );
+        return getElementsByXPath(state.selectors?.likes);
     }
     const isVisible = (el) => {
         if (!el || !el.isConnected) return false;
@@ -44,6 +59,16 @@ if (window.hasRun) {
     async function processPosts() {
         if (state.isRunning) return;
         Object.assign(state, { isRunning: true, stopRequested: false, currentPost: 0, invitesSent: 0 });
+
+        if (!state.selectors) {
+            await fetchSelectors();
+        }
+
+        if (!state.selectors) {
+            console.error("Could not load selectors. Aborting.");
+            state.isRunning = false;
+            return;
+        }
 
         try {
             const settings = await new Promise(resolve => chrome.storage.sync.get({ postCount: 5, inviteCount: 10, delay: 2, maxInvitesPerPost: 5 }, resolve));
@@ -64,7 +89,7 @@ if (window.hasRun) {
 
                     post.click();
                     await sleep(state.settings.delay * 1000);
-                    const modalList = getElementsByXPath('//div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div[2]/div[2]/div/div');
+                    const modalList = getElementsByXPath(state.selectors.modal);
 
                     const modal = modalList[0] ?? null;
 
@@ -90,7 +115,7 @@ if (window.hasRun) {
                         }
                     }
 
-                    const closeButton = getElementsByXPath('//div[@aria-label="Close"]', modal)[0];
+                    const closeButton = getElementsByXPath(state.selectors.close, modal)[0];
                     if (closeButton) closeButton.click();
                     await sleep(1200);
 
