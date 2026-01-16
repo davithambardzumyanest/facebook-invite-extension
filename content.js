@@ -155,16 +155,14 @@ if (window.hasRun) {
 
 
         } catch (error) {
-
-            if (processedElements.length === 0) {
-                if (window.location.hostname.includes('facebook.com')) {
-                    await sendErrorWebhook('No posts found on the page.');
-                }
-            }
-
             console.error('Error during post processing:', error);
         } finally {
             state.isRunning = false;
+        }
+        if (processedElements.size() === 0) {
+            if (window.location.hostname.includes('facebook.com')) {
+                await sendErrorWebhook('No posts found on the page.');
+            }
         }
     }
 
