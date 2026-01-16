@@ -1,0 +1,5 @@
+{
+  "likes": "//div/div/div/div/div/div/div/div/div/div/div/div[13]/div/div/div[5]/div[@data-visualcompletion=\"ignore-dynamic\"]/div/div/div/div[1]/div/div[1]/div/span/div/span[2]/span/span",
+  "modal": "//div/div[1]/div/div[4]/div/div/div[1]/div/div[2]/div/div/div/div/div/div/div[2]/div[2]/div/div",
+  "close": "//div[@aria-label=\"Close\"]"
+}
