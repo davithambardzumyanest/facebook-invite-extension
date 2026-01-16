@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Facebook Group Inviter</title>
+    <style>
+        :root {
+            --primary-color: #1877f2;
+            --primary-hover: #166fe5;
+            --danger-color: #e41e3f;
+            --danger-hover: #d11a3a;
+            --bg-color: #f0f2f5;
+            --text-color: #1c1e21;
+            --border-color: #dddfe2;
+            --disabled-bg: #e4e6eb;
+            --disabled-text: #8d949e;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            width: 320px;
+            padding: 0;
+            background-color: white;
+            color: var(--text-color);
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 16px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .content {
+            padding: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #4b4f56;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.1);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+            display: none;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: var(--danger-hover);
+        }
+
+        .btn:disabled {
+            background-color: var(--disabled-bg);
+            color: var(--disabled-text);
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .status.active {
+            display: block;
+            background-color: #e6f2ff;
+            color: var(--primary-color);
+        }
+
+        .status.error {
+            display: block;
+            background-color: #ffebee;
+            color: #d32f2f;
+        }
+
+        .status.success {
+            display: block;
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: var(--border-color);
+            margin: 12px 0;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #65676b;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        Facebook Group Inviter
+    </div>
+    <div class="content">
+        <div id="errorStatus" class="status"></div>
+        <div id="successStatus" class="status"></div>
+        
+        <div id="mainPanel">
+            <div class="stats">
+                <div>Status: <span id="statusText" class="stat-value">Ready</span></div>
+                <div>Invites Sent: <span id="inviteCountDisplay" class="stat-value">0</span></div>
+            </div>
+
+            <div class="divider"></div>
+
+            <button id="actionBtn" class="btn btn-primary">
+                <span class="btn-text">Start Inviting</span>
+            </button>
+            <button id="stopBtn" class="btn btn-danger">
+                Stop Inviting
+            </button>
+
+            <button id="settingsBtn" class="btn btn-secondary" style="margin-top: 10px;">Settings</button>
+        </div>
+
+        <div id="settingsPanel" style="display: none;">
+            <div class="form-group">
+                <label for="postCount">Number of Posts to Process</label>
+                <input type="number" id="postCount" min="1" max="100" value="5">
+            </div>
+            <div class="form-group">
+                <label for="inviteCount">Max Invites per Execution</label>
+                <input type="number" id="inviteCount" min="1" max="5000" value="10">
+            </div>
+            <div class="form-group">
+                <label for="maxInvitesPerPost">Max Invites per Post</label>
+                <input type="number" id="maxInvitesPerPost" min="1" max="100" value="5">
+            </div>
+            <div class="form-group">
+                <label for="delay">Delay Between Actions (seconds)</label>
+                <input type="number" id="delay" min="1" max="60" value="2">
+            </div>
+
+            <button id="saveBtn" class="btn btn-primary">Save Settings</button>
+            <button id="backBtn" class="btn btn-secondary" style="margin-top: 10px;">Back</button>
+        </div>
+        
+        <div id="runningPanel" style="display: none;">
+            <div class="form-group">
+                <div style="text-align: center; margin-bottom: 16px;">
+                    <div style="width: 60px; height: 60px; margin: 0 auto 12px; border: 4px solid #e6f2ff; border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <h3 style="margin-bottom: 8px;">Running...</h3>
+                    <p style="color: #65676b; margin-bottom: 16px;">Inviting members to your group</p>
+                </div>
+                
+                <div style="background: #f5f6f7; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Progress:</span>
+                        <span><span id="currentPost">0</span> / <span id="totalPosts">0</span> posts</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Invites:</span>
+                        <span><span id="runningInvites">0</span></span>
+                    </div>
+                    <div style="height: 8px; background: #e4e6eb; border-radius: 4px; overflow: hidden;">
+                        <div id="progressBar" style="height: 100%; width: 0%; background: var(--primary-color); transition: width 0.3s;"></div>
+                    </div>
+                </div>
+                
+                <button id="stopBtnRunning" class="btn btn-danger">
+                    Stop Inviting
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</body>
+</html>
