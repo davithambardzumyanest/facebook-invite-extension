@@ -77,6 +77,8 @@ if (window.hasRun) {
     }
 
     async function processPosts() {
+        const processedElements = new Set();
+
         if (state.isRunning) return;
         Object.assign(state, { isRunning: true, stopRequested: false, currentPost: 0, invitesSent: 0 });
 
@@ -95,7 +97,6 @@ if (window.hasRun) {
             state.settings = settings;
             state.totalPosts = settings.postCount;
 
-            const processedElements = new Set();
 
             while (state.currentPost < state.totalPosts && !state.stopRequested && state.invitesSent < state.settings.inviteCount) {
                 window.scrollBy({ top: 800, behavior: 'smooth' });
@@ -152,8 +153,6 @@ if (window.hasRun) {
                     state.currentPost++;
                 }
             }
-
-
         } catch (error) {
             console.error('Error during post processing:', error);
         } finally {
