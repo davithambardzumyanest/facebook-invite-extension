@@ -107,10 +107,11 @@ if (window.hasRun) {
                 for (const post of posts) {
                     if (state.stopRequested || state.invitesSent >= state.settings.inviteCount || state.currentPost >= state.totalPosts) break;
                     if (!isVisible(post) || processedElements.has(post)) continue;
-                    if (!post.textContent.includes('You and') && !Number.isInteger(Number(post.textContent.trim()))) continue;
+                    if (!(post.textContent.includes('You and') || post.textContent.includes('You,')) && !Number.isInteger(Number(post.textContent.trim()))) continue;
 
                     post.click();
                     await sleep(state.settings.delay * 1000);
+                    await sleep(2000);
                     const modalList = getElementsByXPath(state.selectors.modal);
 
                     const modal = modalList[0] ?? null;
@@ -126,7 +127,7 @@ if (window.hasRun) {
 
                     for (let s = 0; s < 5 && !state.stopRequested && state.invitesSent < state.settings.inviteCount && invitesSentForPost < state.settings.maxInvitesPerPost; s++) {
                         modal.scrollTop = modal.scrollHeight;
-                        await sleep(480);
+                        await sleep(1000);
                         newModalText = getElementsByXPath(state.selectors.modal)[0].textContent
                         if (newModalText !== modalText) {
                             s = 0
