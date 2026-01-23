@@ -107,7 +107,7 @@ if (window.hasRun) {
                 for (const post of posts) {
                     if (state.stopRequested || state.invitesSent >= state.settings.inviteCount || state.currentPost >= state.totalPosts) break;
                     if (!isVisible(post) || processedElements.has(post)) continue;
-                    if (!(post.textContent.includes('You and') || post.textContent.includes('You,')) && !Number.isInteger(Number(post.textContent.trim()))) continue;
+                    // if (!(post.textContent.includes('You and') || post.textContent.includes('You,')) && !Number.isInteger(Number(post.textContent.trim()))) continue;
 
                     post.click();
                     await sleep(state.settings.delay * 1000);
