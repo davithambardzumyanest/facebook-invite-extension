@@ -1,6 +1,7 @@
 if (window.hasRun) {
     // The script has already been injected, so we don't need to do anything.
 } else {
+    console.log('Content script loaded and initialized');
     window.hasRun = true;
 
     const state = {
