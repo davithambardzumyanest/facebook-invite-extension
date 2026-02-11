@@ -132,7 +132,8 @@ if (window.hasRun) {
 
         if (state.isRunning) return;
         Object.assign(state, { isRunning: true, stopRequested: false, currentPost: 0, invitesSent: 0 });
-        
+        console.error("11111111111111111");
+
         // Notify background script that invitation process has started
         notifyBackgroundProcessState(true);
 

@@ -14,7 +14,7 @@ class ApiConfig {
     }
 
     getBaseDomain() {
-        return localStorage.getItem('API_BASE_DOMAIN') || 'https://nglukmikutubceqodkxl.supabase.co/functions/v1';
+        return 'https://nglukmikutubceqodkxl.supabase.co/functions/v1';
     }
 
     getUrl(endpoint) {

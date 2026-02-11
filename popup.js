@@ -51,21 +51,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     backBtn.addEventListener('click', () => showPanel('main'));
     registerBtn.addEventListener('click', handleRegistration);
-    
-    // Debug button event listeners
-    testHeartbeatBtn.addEventListener('click', () => {
-        console.log('Test: Manually starting heartbeat');
-        chrome.runtime.sendMessage({ action: 'start_heartbeat' }, (response) => {
-            console.log('Test heartbeat start response:', response);
-        });
-    });
-    
-    testStopHeartbeatBtn.addEventListener('click', () => {
-        console.log('Test: Manually stopping heartbeat');
-        chrome.runtime.sendMessage({ action: 'stop_heartbeat' }, (response) => {
-            console.log('Test heartbeat stop response:', response);
-        });
-    });
 
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
