@@ -71,9 +71,15 @@ function startHeartbeat() {
 function stopHeartbeat() {
     console.log('stopHeartbeat() called, current interval:', heartbeatInterval);
     if (heartbeatInterval) {
-        console.log('Clearing heartbeat interval');
+        console.log('Clearing heartbeat interval immediately');
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+        
+        // Send one final heartbeat to indicate process stopped
+        chrome.runtime.sendMessage({ 
+            type: 'heartbeat_stopped',
+            timestamp: new Date().toISOString()
+        });
     } else {
         console.log('No heartbeat interval to clear');
     }
@@ -126,18 +132,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'start_heartbeat':
             console.log('Starting heartbeat in background script');
             startHeartbeat();
-            sendResponse({ success: true });
+            sendResponse({ success: true, status: 'started' });
             break;
         case 'stop_heartbeat':
             console.log('Stopping heartbeat in background script');
             stopHeartbeat();
-            sendResponse({ success: true });
+            sendResponse({ success: true, status: 'stopped' });
             break;
         case 'heartbeat_status':
-            sendResponse({ isRunning: heartbeatInterval !== null });
+            const isRunning = heartbeatInterval !== null;
+            sendResponse({ 
+                isRunning: isRunning,
+                hasInterval: heartbeatInterval !== null,
+                intervalId: heartbeatInterval
+            });
             break;
         default:
             console.log('Unknown message action:', message.action);
+            sendResponse({ success: false, error: 'Unknown action' });
     }
     return true;
 });

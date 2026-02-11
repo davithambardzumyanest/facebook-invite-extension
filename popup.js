@@ -235,11 +235,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function stopProcess() {
         if (!isRunning) return;
+        
+        console.log('Popup: Sending stop command to content script');
+        
+        // Disable stop button immediately to prevent multiple clicks
+        stopBtn.disabled = true;
+        stopBtnRunning.disabled = true;
+        
         chrome.tabs.sendMessage(currentTabId, { action: 'stop' }, function(response) {
-            if (handleResponseError(response)) return;
+            // Re-enable buttons if there was an error
+            if (handleResponseError(response)) {
+                stopBtn.disabled = false;
+                stopBtnRunning.disabled = false;
+                return;
+            }
+            
+            console.log('Popup: Stop command response:', response);
+            
+            // Force UI update regardless of response
             isRunning = false;
             showPanel('main');
-            updateUI(response);
+            updateUI(response || { isRunning: false, invitesSent: 0 });
+            
+            // Double-check heartbeat status
+            chrome.runtime.sendMessage({ action: 'heartbeat_status' }, function(statusResponse) {
+                console.log('Heartbeat status after stop:', statusResponse);
+                if (statusResponse && statusResponse.isRunning) {
+                    console.log('Heartbeat still running, sending another stop command');
+                    chrome.runtime.sendMessage({ action: 'stop_heartbeat' });
+                }
+            });
         });
     }
 
@@ -258,6 +283,9 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (wasRunning && !isRunning) {
                 // Process just stopped, go back to main panel
                 showPanel('main');
+                // Ensure stop buttons are re-enabled
+                stopBtn.disabled = false;
+                stopBtnRunning.disabled = false;
             }
 
             updateUI(response);
