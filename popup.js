@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize
     loadSettings();
     checkAuthentication();
+    
+    // Set initial button states to prevent flicker
+    stopBtn.style.display = 'none';
+    actionBtn.style.display = 'block';
 
     // Event Listeners
     actionBtn.addEventListener('click', startProcess);
@@ -166,15 +170,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Try to connect to the content script
+            // Try to connect to the content script and get immediate status
             chrome.tabs.sendMessage(currentTabId, { action: 'status' }, function(response) {
                 if (handleResponseError(response, true)) {
                     // Content script not ready yet, try again
                     setTimeout(checkTabStatus, 500);
                     return;
                 }
+                
+                // Update UI immediately based on actual process state
+                if (response && response.isRunning) {
+                    console.log('Process is running, showing stop button immediately');
+                    isRunning = true;
+                    showPanel('running');
+                    updateUI(response);
+                } else {
+                    console.log('Process is not running, showing start button');
+                    isRunning = false;
+                    showPanel('main');
+                    updateUI(response);
+                }
+                
                 actionBtn.disabled = false;
                 settingsBtn.disabled = false;
+                
+                // Clear any existing interval and start status monitoring
                 if (statusInterval) clearInterval(statusInterval);
                 statusInterval = setInterval(checkStatus, 1000);
             });
@@ -297,7 +317,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusText.textContent = data.status || (isRunning ? 'Running' : 'Ready');
         inviteCountDisplay.textContent = data.invitesSent || 0;
 
-        // Show/hide stop button based on running state
+        // Update button visibility based on current running state
         if (isRunning) {
             stopBtn.style.display = 'block';
             actionBtn.style.display = 'none';
