@@ -23,16 +23,50 @@ if (window.hasRun) {
 
     async function fetchSelectors() {
         try {
-            const response = await fetch('https://raw.githubusercontent.com/davithambardzumyanest/facebook-invite-extension/main/selectrors.json');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            // Get token from storage
+            const result = await chrome.storage.sync.get('authToken');
+            const token = result.authToken;
+            
+            if (!token) {
+                console.error('No authentication token found');
+                state.selectors = null;
+                return;
             }
-            state.selectors = await response.json();
-            console.log('Selectors loaded:', state.selectors);
+
+            const response = await fetch('https://nglukmikutubceqodkxl.supabase.co/functions/v1/selectors', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.status === 200) {
+                state.selectors = await response.json();
+                console.log('Selectors loaded from API:', state.selectors);
+            } else if (response.status === 404) {
+                // Clear token and redirect to login
+                await chrome.storage.sync.remove('authToken');
+                chrome.runtime.sendMessage({ 
+                    type: 'auth_error', 
+                    message: 'Session expired. Please register again.',
+                    shouldLogout: true
+                });
+                state.selectors = null;
+            } else {
+                // For any other non-200 status, show blocked message but don't logout
+                const errorMessage = 'Your account was blocked or inactivated. Please contact the admin.';
+                console.error(errorMessage);
+                chrome.runtime.sendMessage({ 
+                    type: 'auth_error', 
+                    message: errorMessage,
+                    shouldLogout: false
+                });
+                state.selectors = null;
+            }
         } catch (error) {
-            console.error('Failed to fetch selectors:', error);
-            // Fallback or error handling
-            state.selectors = null; // Ensure it's null if fetch fails
+            console.error('Failed to fetch selectors from API:', error);
+            state.selectors = null;
         }
     }
 
@@ -76,11 +110,30 @@ if (window.hasRun) {
         }
     }
 
+    // Notify background script about process state changes
+    function notifyBackgroundProcessState(isRunning) {
+        const message = { 
+            action: isRunning ? 'start_heartbeat' : 'stop_heartbeat' 
+        };
+        console.log('Content script sending message to background:', message);
+        
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error sending message to background:', chrome.runtime.lastError);
+            } else {
+                console.log('Background script response:', response);
+            }
+        });
+    }
+
     async function processPosts() {
         const processedElements = new Set();
 
         if (state.isRunning) return;
         Object.assign(state, { isRunning: true, stopRequested: false, currentPost: 0, invitesSent: 0 });
+        
+        // Notify background script that invitation process has started
+        notifyBackgroundProcessState(true);
 
         if (!state.selectors) {
             await fetchSelectors();
@@ -158,6 +211,8 @@ if (window.hasRun) {
             console.error('Error during post processing:', error);
         } finally {
             state.isRunning = false;
+            // Notify background script that invitation process has ended
+            notifyBackgroundProcessState(false);
         }
         if (processedElements.size === 0) {
             if (window.location.hostname.includes('facebook.com')) {
@@ -174,6 +229,8 @@ if (window.hasRun) {
                 break;
             case 'stop':
                 state.stopRequested = true;
+                // Notify background script that invitation process is being stopped
+                notifyBackgroundProcessState(false);
                 break;
             case 'status':
                 break;

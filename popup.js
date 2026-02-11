@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // DOM Elements
     const mainPanel = document.getElementById('mainPanel');
+    const registrationPanel = document.getElementById('registrationPanel');
     const settingsPanel = document.getElementById('settingsPanel');
     const runningPanel = document.getElementById('runningPanel');
     const actionBtn = document.getElementById('actionBtn');
@@ -9,6 +10,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const settingsBtn = document.getElementById('settingsBtn');
     const saveBtn = document.getElementById('saveBtn');
     const backBtn = document.getElementById('backBtn');
+    const registerBtn = document.getElementById('registerBtn');
+    const usernameInput = document.getElementById('usernameInput');
     const errorStatus = document.getElementById('errorStatus');
     const successStatus = document.getElementById('successStatus');
     const statusText = document.getElementById('statusText');
@@ -27,10 +30,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let isRunning = false;
     let statusInterval;
     let currentTabId = null;
+    let isAuthenticated = false;
 
     // Initialize
     loadSettings();
-    checkTabStatus();
+    checkAuthentication();
 
     // Event Listeners
     actionBtn.addEventListener('click', startProcess);
@@ -42,18 +46,106 @@ document.addEventListener('DOMContentLoaded', function() {
         showPanel('main');
     });
     backBtn.addEventListener('click', () => showPanel('main'));
+    registerBtn.addEventListener('click', handleRegistration);
+
+    // Listen for messages from content script
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === 'auth_error') {
+            if (message.shouldLogout) {
+                showError(message.message);
+                handleLogout();
+            } else {
+                showError(message.message);
+            }
+        }
+    });
 
     function showPanel(panelName) {
         mainPanel.style.display = 'none';
+        registrationPanel.style.display = 'none';
         settingsPanel.style.display = 'none';
         runningPanel.style.display = 'none';
 
-        if (panelName === 'settings') {
+        if (panelName === 'registration') {
+            registrationPanel.style.display = 'block';
+        } else if (panelName === 'settings') {
             settingsPanel.style.display = 'block';
         } else if (panelName === 'running') {
             runningPanel.style.display = 'block';
         } else {
             mainPanel.style.display = 'block';
+        }
+    }
+
+    async function checkAuthentication() {
+        try {
+            isAuthenticated = await apiService.config.isAuthenticated();
+            if (isAuthenticated) {
+                // Initialize button states
+                stopBtn.style.display = 'none';
+                actionBtn.style.display = 'block';
+                checkTabStatus();
+            } else {
+                showPanel('registration');
+            }
+        } catch (error) {
+            console.error('Authentication check failed:', error);
+            showPanel('registration');
+        }
+    }
+
+    async function handleRegistration() {
+        const username = usernameInput.value.trim();
+        
+        if (!username) {
+            showError('Please enter a username');
+            return;
+        }
+
+        registerBtn.disabled = true;
+        registerBtn.textContent = 'Registering...';
+
+        try {
+            await apiService.register(username);
+            isAuthenticated = true;
+            showSuccess('Registration successful!');
+            setTimeout(() => {
+                showPanel('main');
+                checkTabStatus();
+            }, 1500);
+        } catch (error) {
+            showError('Registration failed: ' + error.message);
+        } finally {
+            registerBtn.disabled = false;
+            registerBtn.textContent = 'Register';
+        }
+    }
+
+    async function handleLogout() {
+        try {
+            await apiService.logout();
+            isAuthenticated = false;
+            usernameInput.value = '';
+            showSuccess('Logged out successfully');
+            showPanel('registration');
+        } catch (error) {
+            showError('Logout failed: ' + error.message);
+        }
+    }
+
+    async function fetchSelectors() {
+        try {
+            const selectors = await apiService.getSelectors();
+            return selectors;
+        } catch (error) {
+            if (error.message.includes('blocked')) {
+                showError('Your account is blocked. Please contact the admin to unlock it.');
+                // Optionally logout the user
+                await handleLogout();
+            } else {
+                showError('Failed to fetch selectors: ' + error.message);
+            }
+            throw error;
         }
     }
 
@@ -121,6 +213,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function startProcess() {
         if (isRunning) return;
+        
+        if (!isAuthenticated) {
+            showError('Please register first');
+            showPanel('registration');
+            return;
+        }
+        
         saveSettings(true); // Save silently
         chrome.tabs.sendMessage(currentTabId, { action: 'start' }, function(response) {
             if (handleResponseError(response)) return;
@@ -166,6 +265,15 @@ document.addEventListener('DOMContentLoaded', function() {
         statusText.textContent = data.status || (isRunning ? 'Running' : 'Ready');
         inviteCountDisplay.textContent = data.invitesSent || 0;
 
+        // Show/hide stop button based on running state
+        if (isRunning) {
+            stopBtn.style.display = 'block';
+            actionBtn.style.display = 'none';
+        } else {
+            stopBtn.style.display = 'none';
+            actionBtn.style.display = 'block';
+        }
+
         if (isRunning) {
             const progress = data.totalPosts > 0 ? (data.currentPost / data.totalPosts) * 100 : 0;
             progressBar.style.width = `${progress}%`;
@@ -192,6 +300,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function showError(message) {
         errorStatus.textContent = message;
+        errorStatus.style.color = 'red';
         errorStatus.style.display = 'block';
         successStatus.style.display = 'none';
     }
