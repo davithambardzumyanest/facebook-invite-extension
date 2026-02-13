@@ -198,14 +198,24 @@ if (window.hasRun) {
         // Notify background script that invitation process has started
         notifyBackgroundProcessState(true);
 
+        // Ensure selectors are loaded with retry mechanism
         if (!state.selectors) {
+            console.log('Selectors not loaded, fetching...');
             await fetchSelectors();
+            
+            // If still not loaded, wait and retry
+            if (!state.selectors) {
+                console.log('Selectors still not available, waiting...');
+                await sleep(2000);
+                await fetchSelectors();
+            }
         }
 
         if (!state.selectors) {
-            console.error("Could not load selectors. Aborting.");
+            console.error("Could not load selectors after multiple attempts. Aborting.");
             state.isRunning = false;
-            return;
+            notifyBackgroundProcessState(false);
+            throw new Error('Failed to load selectors. Please refresh the page and try again.');
         }
 
         try {
@@ -436,8 +446,13 @@ if (window.hasRun) {
             if (error.message.includes('stopped') || error.message.includes('aborted')) {
                 console.log('Process was intentionally stopped');
             } else {
-                // Log unexpected errors
+                // Log unexpected errors and send to popup
                 console.error('Unexpected error:', error);
+                // Send error to popup
+                chrome.runtime.sendMessage({ 
+                    type: 'process_error', 
+                    error: error.message 
+                });
             }
         } finally {
             console.log('ProcessPosts finally block - stopping process');
@@ -458,8 +473,15 @@ if (window.hasRun) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         switch (request.action) {
             case 'start':
-                processPosts();
-                break;
+                processPosts().catch(error => {
+                    console.error('Process failed to start:', error);
+                    sendResponse({ 
+                        success: false, 
+                        error: error.message,
+                        isRunning: false 
+                    });
+                });
+                return true; // Keep message channel open for async response
             case 'stop':
                 console.log('Stop command received in content script');
                 forceKillProcess();

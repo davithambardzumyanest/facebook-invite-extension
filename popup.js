@@ -55,6 +55,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     backBtn.addEventListener('click', () => showPanel('main'));
     registerBtn.addEventListener('click', handleRegistration);
+    
+    // Add Enter key support for registration
+    usernameInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            handleRegistration();
+        }
+    });
 
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -65,6 +73,13 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 showError(message.message);
             }
+        } else if (message.type === 'process_error') {
+            showError(message.error);
+            // Reset UI state
+            isRunning = false;
+            showPanel('main');
+            actionBtn.disabled = false;
+            actionBtn.textContent = 'Start Inviting';
         }
     });
 
@@ -105,8 +120,18 @@ document.addEventListener('DOMContentLoaded', function() {
     async function handleRegistration() {
         const username = usernameInput.value.trim();
         
-        if (!username) {
+        if (!username || username.length === 0) {
             showError('Please enter a username');
+            return;
+        }
+        
+        if (username.length < 2) {
+            showError('Username must be at least 2 characters long');
+            return;
+        }
+        
+        if (username.length > 50) {
+            showError('Username must be less than 50 characters long');
             return;
         }
 
@@ -244,13 +269,35 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Show loading state
+        actionBtn.disabled = true;
+        actionBtn.textContent = 'Loading...';
+        
         saveSettings(true); // Save silently
-        chrome.tabs.sendMessage(currentTabId, { action: 'start' }, function(response) {
-            if (handleResponseError(response)) return;
-            isRunning = true;
-            showPanel('running');
-            updateUI(response);
-        });
+        
+        // Add delay to ensure everything is ready
+        setTimeout(() => {
+            chrome.tabs.sendMessage(currentTabId, { action: 'start' }, function(response) {
+                if (handleResponseError(response)) {
+                    // Reset button state on error
+                    actionBtn.disabled = false;
+                    actionBtn.textContent = 'Start Inviting';
+                    return;
+                }
+                
+                // Check if there was an error in the response
+                if (response && response.error) {
+                    showError(response.error);
+                    actionBtn.disabled = false;
+                    actionBtn.textContent = 'Start Inviting';
+                    return;
+                }
+                
+                isRunning = true;
+                showPanel('running');
+                updateUI(response);
+            });
+        }, 2000); // 2 second delay to ensure selectors are loaded
     }
 
     function stopProcess() {
