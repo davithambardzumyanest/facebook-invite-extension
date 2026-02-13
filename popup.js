@@ -79,7 +79,10 @@ document.addEventListener('DOMContentLoaded', function() {
             isRunning = false;
             showPanel('main');
             actionBtn.disabled = false;
-            actionBtn.textContent = 'Start Inviting';
+            actionBtn.classList.remove('loading');
+            actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
+            stopBtn.style.display = 'none';
+            actionBtn.style.display = 'block';
         }
     });
 
@@ -185,10 +188,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function checkTabStatus() {
         chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
             const activeTab = tabs[0];
-            if (!activeTab) return;
+            if (!activeTab) {
+                console.log('Popup: No active tab found');
+                return;
+            }
+            
             currentTabId = activeTab.id;
+            console.log('Popup: Checking tab status for tab:', currentTabId, activeTab.url);
 
             if (!activeTab.url || !activeTab.url.includes('facebook.com')) {
+                console.log('Popup: Not a Facebook page');
                 showError('Please navigate to a Facebook page.');
                 actionBtn.disabled = true;
                 settingsBtn.disabled = true;
@@ -198,14 +207,29 @@ document.addEventListener('DOMContentLoaded', function() {
             // Try to connect to the content script and get immediate status
             chrome.tabs.sendMessage(currentTabId, { action: 'status' }, function(response) {
                 if (handleResponseError(response, true)) {
-                    // Content script not ready yet, try again
-                    setTimeout(checkTabStatus, 500);
+                    console.log('Popup: Content script not ready, retrying in 500ms');
+                    // Content script not ready yet, try again with limited retries
+                    if (!this.retryCount) this.retryCount = 0;
+                    this.retryCount++;
+                    
+                    if (this.retryCount < 5) {
+                        setTimeout(() => checkTabStatus(), 500);
+                    } else {
+                        console.log('Popup: Max retries reached, showing reload message');
+                        showError('Content script not responding. Please refresh the Facebook page.');
+                        actionBtn.disabled = true;
+                        settingsBtn.disabled = true;
+                        this.retryCount = 0;
+                    }
                     return;
                 }
                 
+                // Reset retry count on success
+                this.retryCount = 0;
+                
                 // Update UI immediately based on actual process state
                 if (response && response.isRunning) {
-                    console.log('Process is running, showing stop button immediately');
+                    console.log('Popup: Process is running, showing stop button immediately');
                     isRunning = true;
                     showPanel('running');
                     updateUI(response);
@@ -269,19 +293,26 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Show loading state
+        // Show loading state with spinner
         actionBtn.disabled = true;
-        actionBtn.textContent = 'Loading...';
+        actionBtn.classList.add('loading');
+        actionBtn.innerHTML = '<span class="spinner"></span><span class="loading-text">Initializing...</span>';
         
         saveSettings(true); // Save silently
         
         // Add delay to ensure everything is ready
         setTimeout(() => {
+            // Update loading text
+            actionBtn.innerHTML = '<span class="spinner"></span><span class="loading-text">Starting...</span>';
+            
             chrome.tabs.sendMessage(currentTabId, { action: 'start' }, function(response) {
+                // Remove loading state
+                actionBtn.classList.remove('loading');
+                
                 if (handleResponseError(response)) {
                     // Reset button state on error
                     actionBtn.disabled = false;
-                    actionBtn.textContent = 'Start Inviting';
+                    actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
                     return;
                 }
                 
@@ -289,7 +320,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (response && response.error) {
                     showError(response.error);
                     actionBtn.disabled = false;
-                    actionBtn.textContent = 'Start Inviting';
+                    actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
                     return;
                 }
                 
@@ -336,9 +367,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function checkStatus() {
-        if (!currentTabId) return;
+        if (!currentTabId) {
+            console.log('Popup: No current tab ID, cannot check status');
+            return;
+        }
+        
         chrome.tabs.sendMessage(currentTabId, { action: 'status' }, function(response) {
-            if (handleResponseError(response, true)) return;
+            if (handleResponseError(response, true)) {
+                // If there's a connection error, try to reinitialize
+                console.log('Popup: Connection error in checkStatus, trying to reinitialize');
+                checkTabStatus();
+                return;
+            }
 
             const wasRunning = isRunning;
             isRunning = response.isRunning;
@@ -353,6 +393,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Ensure stop buttons are re-enabled
                 stopBtn.disabled = false;
                 stopBtnRunning.disabled = false;
+                // Reset start button state
+                actionBtn.disabled = false;
+                actionBtn.classList.remove('loading');
+                actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
             }
 
             updateUI(response);
@@ -371,6 +415,10 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             stopBtn.style.display = 'none';
             actionBtn.style.display = 'block';
+            // Ensure start button is in correct state
+            actionBtn.disabled = false;
+            actionBtn.classList.remove('loading');
+            actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
         }
 
         if (isRunning) {
@@ -384,15 +432,42 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function handleResponseError(response, silent = false) {
         if (chrome.runtime.lastError) {
-            if (!silent && !chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
-                showError('Error: Could not connect to the page. Please reload the tab.');
-            }
-            // Don't disable buttons if it's just a connection error
-            if (!chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+            const errorMessage = chrome.runtime.lastError.message;
+            console.log('Popup: Chrome runtime error:', errorMessage);
+            
+            // Handle different types of connection errors
+            if (errorMessage.includes('Receiving end does not exist')) {
+                // Content script not injected or page reloaded
+                console.log('Popup: Content script not available, page may have been reloaded');
+                if (!silent) {
+                    showError('Please refresh the Facebook page and try again.');
+                }
+                // Don't disable buttons for this common case
+                return false;
+            } else if (errorMessage.includes('Could not establish connection')) {
+                // Tab closed or navigated away
+                console.log('Popup: Tab closed or navigated away');
+                if (!silent) {
+                    showError('The Facebook tab was closed. Please open Facebook and try again.');
+                }
+                return true;
+            } else if (errorMessage.includes('The message port closed')) {
+                // Extension context invalidated
+                console.log('Popup: Extension context invalidated');
+                if (!silent) {
+                    showError('Extension was reloaded. Please refresh the page.');
+                }
+                return true;
+            } else {
+                // Other connection errors
+                console.log('Popup: Other connection error:', errorMessage);
+                if (!silent) {
+                    showError('Connection error. Please reload the Facebook tab.');
+                }
                 actionBtn.disabled = true;
                 settingsBtn.disabled = true;
+                return true;
             }
-            return true;
         }
         return false;
     }

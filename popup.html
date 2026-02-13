@@ -129,6 +129,37 @@
             cursor: not-allowed;
         }
 
+        .btn.loading {
+            position: relative;
+            pointer-events: none;
+        }
+
+        .btn.loading .btn-text {
+            opacity: 0.7;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid transparent;
+            border-top: 2px solid currentColor;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            display: inline-block;
+            vertical-align: middle;
+        }
+
         .status {
             padding: 10px 12px;
             border-radius: 6px;

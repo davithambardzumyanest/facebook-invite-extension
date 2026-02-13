@@ -1,6 +1,5 @@
-// Background Script - Heartbeat Management
+// Background Script - Simplified Ping Management
 console.log('Background script loaded and initialized');
-let heartbeatInterval = null;
 
 // API Configuration
 class ApiConfig {
@@ -49,46 +48,16 @@ class ApiConfig {
 
 const apiConfig = new ApiConfig();
 
-// Heartbeat Functions
-function startHeartbeat() {
-    console.log('startHeartbeat() called, current interval:', heartbeatInterval);
-    if (heartbeatInterval) {
-        console.log('Clearing existing heartbeat interval');
-        clearInterval(heartbeatInterval);
-    }
-
-    console.log('Starting new heartbeat interval (5 seconds)');
-    heartbeatInterval = setInterval(async () => {
-        try {
-            console.log('Sending heartbeat ping...');
-            await sendHeartbeat();
-        } catch (error) {
-            console.error('Background heartbeat error:', error);
-        }
-    }, 5000); // Send ping every 5 seconds
-}
-
-function stopHeartbeat() {
-    console.log('stopHeartbeat() called, current interval:', heartbeatInterval);
-    if (heartbeatInterval) {
-        console.log('Clearing heartbeat interval immediately');
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-        
-        // Send one final heartbeat to indicate process stopped
-        chrome.runtime.sendMessage({ 
-            type: 'heartbeat_stopped',
-            timestamp: new Date().toISOString()
-        });
-    } else {
-        console.log('No heartbeat interval to clear');
-    }
-}
-
-async function sendHeartbeat() {
+// Simple ping function that content script can call
+async function sendPing() {
     try {
+        console.log('Background: Sending ping request...');
+        
         const token = await apiConfig.getToken();
-        console.log('Background sending heartbeat with token:', token ? 'Token exists' : 'No token');
+        if (!token) {
+            console.log('Background: No token available, skipping ping');
+            return { success: false, error: 'No token' };
+        }
         
         const response = await fetch(apiConfig.getUrl('heartbeat'), {
             method: 'POST',
@@ -99,10 +68,12 @@ async function sendHeartbeat() {
             })
         });
 
-        console.log('Background heartbeat response status:', response.status);
+        console.log('Background: Ping response status:', response.status);
         
         if (response.status === 200) {
-            return await response.json();
+            const data = await response.json();
+            console.log('Background: Ping successful');
+            return { success: true, data: data };
         } else if (response.status === 404) {
             // Clear token and notify popup
             await chrome.storage.sync.remove('authToken');
@@ -111,50 +82,36 @@ async function sendHeartbeat() {
                 message: 'Session expired. Please register again.',
                 shouldLogout: true
             });
-            throw new Error('Session expired. Please register again.');
+            return { success: false, error: 'Session expired' };
         } else {
             const errorText = await response.text();
-            console.error('Background heartbeat error response:', errorText);
-            throw new Error('Your account was blocked or inactivated. Please contact the admin.');
+            console.error('Background: Ping error response:', errorText);
+            return { success: false, error: 'Your account was blocked or inactivated. Please contact the admin.' };
         }
     } catch (error) {
-        console.error('Background heartbeat error:', error);
-        throw error;
+        console.error('Background: Ping error:', error);
+        return { success: false, error: error.message };
     }
 }
 
-// Message Handling
+// Message Handling - simplified for ping requests
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Background script received message:', message);
-    console.log('Message sender:', sender);
     
     switch (message.action) {
-        case 'start_heartbeat':
-            console.log('Starting heartbeat in background script');
-            startHeartbeat();
-            sendResponse({ success: true, status: 'started' });
-            break;
-        case 'stop_heartbeat':
-            console.log('Stopping heartbeat in background script');
-            stopHeartbeat();
-            sendResponse({ success: true, status: 'stopped' });
-            break;
-        case 'heartbeat_status':
-            const isRunning = heartbeatInterval !== null;
-            sendResponse({ 
-                isRunning: isRunning,
-                hasInterval: heartbeatInterval !== null,
-                intervalId: heartbeatInterval
+        case 'send_ping':
+            console.log('Background: Received send_ping request');
+            sendPing().then(result => {
+                console.log('Background: Ping result:', result);
+                sendResponse(result);
+            }).catch(error => {
+                console.error('Background: Ping failed:', error);
+                sendResponse({ success: false, error: error.message });
             });
-            break;
+            return true; // Keep message channel open for async response
         default:
-            console.log('Unknown message action:', message.action);
+            console.log('Background: Unknown message action:', message.action);
             sendResponse({ success: false, error: 'Unknown action' });
     }
     return true;
-});
-
-// Cleanup on extension unload
-chrome.runtime.onSuspend.addListener(() => {
-    stopHeartbeat();
 });

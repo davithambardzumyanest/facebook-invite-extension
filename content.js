@@ -19,6 +19,8 @@ if (window.hasRun) {
         selectors: null,
         processAbortController: null,
         currentModal: null,
+        pingInterval: null,
+        keepPinging: false, // New flag to keep pinging after process ends
     };
 
     // --- UTILITY FUNCTIONS ---
@@ -35,6 +37,49 @@ if (window.hasRun) {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
     };
+    
+    // Send ping to background script
+    async function sendPingToBackground() {
+        try {
+            console.log('Content: Sending ping to background...');
+            const response = await chrome.runtime.sendMessage({ action: 'send_ping' });
+            console.log('Content: Ping response:', response);
+            
+            if (response && response.success) {
+                console.log('Content: Ping sent successfully');
+            } else {
+                console.error('Content: Ping failed:', response?.error || 'Unknown error');
+            }
+        } catch (error) {
+            console.error('Content: Error sending ping:', error);
+        }
+    }
+    
+    // Start ping interval
+    function startPingInterval() {
+        if (state.pingInterval) {
+            clearInterval(state.pingInterval);
+        }
+        
+        console.log('Content: Starting ping interval (10 seconds)');
+        state.pingInterval = setInterval(sendPingToBackground, 10000); // Send ping every 10 seconds
+        
+        // Send immediate ping to test
+        console.log('Content: Sending test ping...');
+        sendPingToBackground();
+    }
+    
+    // Stop ping interval
+    function stopPingInterval() {
+        console.log('Content: stopPingInterval called, current interval:', state.pingInterval);
+        if (state.pingInterval) {
+            console.log('Content: Clearing ping interval');
+            clearInterval(state.pingInterval);
+            state.pingInterval = null;
+        } else {
+            console.log('Content: No ping interval to clear');
+        }
+    }
 
     async function fetchSelectors() {
         try {
@@ -118,6 +163,9 @@ if (window.hasRun) {
         state.stopRequested = true;
         state.isRunning = false;
         
+        // Stop ping interval
+        stopPingInterval();
+        
         // Abort any ongoing operations
         if (state.processAbortController) {
             state.processAbortController.abort();
@@ -145,8 +193,16 @@ if (window.hasRun) {
         // Reset state to clean values
         state.currentPost = 0;
         state.invitesSent = 0;
+        state.keepPinging = false;
         
         console.log('Process force killed successfully');
+    }
+    
+    // Function to manually stop all pings
+    function stopAllPings() {
+        console.log('Content: Manually stopping all pings');
+        state.keepPinging = false;
+        stopPingInterval();
     }
     async function sendErrorWebhook(errorMessage) {
         const webhookUrl = 'https://n8n.esterox.com/webhook/abaf7792-d685-4554-b197-c7d0be5a222d';
@@ -169,19 +225,23 @@ if (window.hasRun) {
     }
 
     // Notify background script about process state changes
-    function notifyBackgroundProcessState(isRunning) {
-        const message = { 
-            action: isRunning ? 'start_heartbeat' : 'stop_heartbeat' 
-        };
-        console.log('Content script sending message to background:', message);
-        
-        chrome.runtime.sendMessage(message, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error('Error sending message to background:', chrome.runtime.lastError);
+    function notifyBackgroundProcessState(isRunning, keepPinging = false) {
+        console.log('Content: notifyBackgroundProcessState called with:', isRunning, 'keepPinging:', keepPinging);
+        if (isRunning) {
+            console.log('Content: Starting ping interval');
+            startPingInterval();
+            state.keepPinging = false;
+        } else {
+            if (keepPinging) {
+                console.log('Content: Process ended but keeping pings active');
+                state.keepPinging = true;
+                // Don't stop pings, let them continue
             } else {
-                console.log('Background script response:', response);
+                console.log('Content: Stopping ping interval');
+                state.keepPinging = false;
+                stopPingInterval();
             }
-        });
+        }
     }
 
     async function processPosts() {
@@ -271,10 +331,13 @@ if (window.hasRun) {
                     state.currentModal = modal; // Track current modal for force close
 
                     if (!modal) {
-                        console.log("Invite modal not found, skipping post.");
+                        console.log("Content: Invite modal not found, skipping post.");
                         state.currentModal = null;
                         continue;
                     }
+                    
+                    console.log('Content: Modal found, checking for close button');
+                    console.log('Content: Modal element:', modal);
 
                     let invitesSentForPost = 0;
                     let modalText = modal.textContent;
@@ -295,6 +358,9 @@ if (window.hasRun) {
                         
                         modal.scrollTop = modal.scrollHeight;
                         await cancellableSleep(1000);
+                        
+                        // Send ping during modal scrolling
+                        await sendPingToBackground();
                         
                         // Check stop request after scroll
                         if (state.stopRequested) {
@@ -324,27 +390,30 @@ if (window.hasRun) {
                     }
 
                     const closeButton = getElementsByXPath(state.selectors.close, modal)[0];
+                    console.log('Content: Looking for close button with selector:', state.selectors.close);
+                    console.log('Content: Close button found:', !!closeButton);
+                    
                     if (closeButton) {
-                        console.log('Found close button, clicking it');
+                        console.log('Content: Found close button, clicking it');
                         closeButton.click();
                         await sleep(1200);
                     } else {
-                        console.log('Primary close selector failed, trying fallback methods');
+                        console.log('Content: Primary close selector failed, trying fallback methods');
                         
                         // Fallback 1: Try common close button selectors within modal
                         const fallbackSelectors = [
-                            './/div[@aria-label="Close"]',
-                            './/div[@aria-label="Close dialog"]', 
-                            './/button[@aria-label="Close"]',
-                            './/span[@aria-label="Close"]',
-                            './/div[contains(@class, "close")]',
-                            './/button[contains(@class, "close")]',
-                            './/div[contains(@data-testid, "close")]',
-                            './/button[contains(@data-testid, "close")]',
-                            './/div[@role="button" and contains(@class, "close")]',
-                            './/svg[@aria-label="Close"]',
-                            './/div[contains(@class, "x1i10hfl") and contains(@class, "xj7lmb")]', // Facebook's close button classes
-                            './/div[contains(@class, "x6s0dn4") and contains(@class, "x78zum5")]' // Another common pattern
+                            ".//div[@aria-label='Close']",
+                            ".//div[@aria-label='Close dialog']", 
+                            ".//button[@aria-label='Close']",
+                            ".//span[@aria-label='Close']",
+                            ".//div[contains(@class, 'close')]",
+                            ".//button[contains(@class, 'close')]",
+                            ".//div[contains(@data-testid, 'close')]",
+                            ".//button[contains(@data-testid, 'close')]",
+                            ".//div[@role='button' and contains(@class, 'close')]",
+                            ".//svg[@aria-label='Close']",
+                            ".//div[contains(@class, 'x1i10hfl') and contains(@class, 'xj7lmb')]", // Facebook's close button classes
+                            ".//div[contains(@class, 'x6s0dn4') and contains(@class, 'x78zum5')]" // Another common pattern
                         ];
                         
                         let closed = false;
@@ -437,6 +506,9 @@ if (window.hasRun) {
                     // Clear current modal reference
                     state.currentModal = null;
 
+                    // Send ping after processing each post
+                    await sendPingToBackground();
+                    
                     processedElements.add(post);
                     state.currentPost++;
                 }
@@ -459,8 +531,19 @@ if (window.hasRun) {
             state.isRunning = false;
             state.currentModal = null;
             state.processAbortController = null;
-            // Notify background script that invitation process has ended
-            notifyBackgroundProcessState(false);
+            
+            // Check if process finished naturally or was stopped
+            const finishedNaturally = !state.stopRequested && state.invitesSent >= state.settings.inviteCount;
+            
+            if (finishedNaturally) {
+                console.log('Process finished naturally, keeping pings active');
+                // Keep pinging after natural completion
+                notifyBackgroundProcessState(false, true);
+            } else {
+                console.log('Process was stopped, stopping pings');
+                // Stop pings when manually stopped
+                notifyBackgroundProcessState(false, false);
+            }
         }
         if (processedElements.size === 0) {
             if (window.location.hostname.includes('facebook.com')) {
@@ -483,10 +566,10 @@ if (window.hasRun) {
                 });
                 return true; // Keep message channel open for async response
             case 'stop':
-                console.log('Stop command received in content script');
+                console.log('Content: Stop command received in content script');
                 forceKillProcess();
-                // Notify background script that invitation process is being stopped
-                notifyBackgroundProcessState(false);
+                // Notify background script that invitation process is being stopped (manually)
+                notifyBackgroundProcessState(false, false);
                 // Send immediate response to confirm stop
                 sendResponse({ success: true, message: 'Process force killed' });
                 break;
