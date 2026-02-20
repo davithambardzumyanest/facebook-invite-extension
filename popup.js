@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const delayInput = document.getElementById('delay');
 
     let isRunning = false;
+    let processCompletedNaturally = false; // Track natural completion
     let statusInterval;
     let currentTabId = null;
     let isAuthenticated = false;
@@ -64,11 +65,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    function resetAllStates() {
+        console.log('Popup: Resetting all states');
+        isRunning = false;
+        processCompletedNaturally = false;
+        
+        // Reset UI to clean state
+        showPanel('main');
+        actionBtn.disabled = false;
+        actionBtn.classList.remove('loading');
+        actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
+        stopBtn.disabled = false;
+        stopBtnRunning.disabled = false;
+        stopBtn.style.display = 'none';
+        actionBtn.style.display = 'block';
+    }
+
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        console.log('Popup: Received message:', message);
+        
         if (message.type === 'auth_error') {
             if (message.shouldLogout) {
-                showError(message.message);
                 handleLogout();
             } else {
                 showError(message.message);
@@ -76,13 +94,25 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (message.type === 'process_error') {
             showError(message.error);
             // Reset UI state
+            resetAllStates();
+        } else if (message.type === 'process_completed') {
+            showSuccess(message.message);
+            // Reset UI state to allow starting again
             isRunning = false;
+            processCompletedNaturally = true; // Mark as naturally completed
             showPanel('main');
             actionBtn.disabled = false;
             actionBtn.classList.remove('loading');
             actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
             stopBtn.style.display = 'none';
             actionBtn.style.display = 'block';
+            // Update UI with final stats
+            updateUI({
+                isRunning: false,
+                invitesSent: message.invitesSent,
+                currentPost: message.currentPost,
+                status: 'Completed'
+            });
         }
     });
 
@@ -293,6 +323,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Reset natural completion flag
+        processCompletedNaturally = false;
+        
         // Show loading state with spinner
         actionBtn.disabled = true;
         actionBtn.classList.add('loading');
@@ -372,9 +405,25 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // If process completed naturally, don't check status to avoid connection errors
+        if (processCompletedNaturally) {
+            console.log('Popup: Process completed naturally, skipping status check to avoid connection errors');
+            return;
+        }
+        
         chrome.tabs.sendMessage(currentTabId, { action: 'status' }, function(response) {
             if (handleResponseError(response, true)) {
-                // If there's a connection error, try to reinitialize
+                // If there's a connection error, check if process was recently completed
+                if (chrome.runtime.lastError && chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+                    console.log('Popup: Content script not responding, but process may have completed naturally');
+                    // Don't show connection error if process likely completed
+                    // Just reset UI to ready state
+                    resetAllStates();
+                    processCompletedNaturally = true; // Assume natural completion
+                    return;
+                }
+                
+                // For other connection errors, try to reinitialize
                 console.log('Popup: Connection error in checkStatus, trying to reinitialize');
                 checkTabStatus();
                 return;
@@ -389,14 +438,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 showPanel('running');
             } else if (wasRunning && !isRunning) {
                 // Process just stopped, go back to main panel
-                showPanel('main');
-                // Ensure stop buttons are re-enabled
-                stopBtn.disabled = false;
-                stopBtnRunning.disabled = false;
-                // Reset start button state
-                actionBtn.disabled = false;
-                actionBtn.classList.remove('loading');
-                actionBtn.innerHTML = '<span class="btn-text">Start Inviting</span>';
+                resetAllStates();
             }
 
             updateUI(response);
@@ -462,7 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Other connection errors
                 console.log('Popup: Other connection error:', errorMessage);
                 if (!silent) {
-                    showError('Connection error. Please reload the Facebook tab.');
+                    showError('Connection error. Please try again.');
                 }
                 actionBtn.disabled = true;
                 settingsBtn.disabled = true;

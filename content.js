@@ -201,8 +201,25 @@ if (window.hasRun) {
     // Function to manually stop all pings
     function stopAllPings() {
         console.log('Content: Manually stopping all pings');
+        
+        // Clear the ping interval
+        if (state.pingInterval) {
+            clearInterval(state.pingInterval);
+            state.pingInterval = null;
+            console.log('Content: Cleared ping interval in stopAllPings');
+        }
+        
+        // Reset ping state
         state.keepPinging = false;
-        stopPingInterval();
+        
+        // Send stop to background script
+        try {
+            chrome.runtime.sendMessage({ action: 'stop_heartbeat' }, (response) => {
+                console.log('Content: stopAllPings response:', response);
+            });
+        } catch (error) {
+            console.log('Content: Failed to send stop in stopAllPings:', error);
+        }
     }
     async function sendErrorWebhook(errorMessage) {
         const webhookUrl = 'https://n8n.esterox.com/webhook/abaf7792-d685-4554-b197-c7d0be5a222d';
@@ -232,6 +249,7 @@ if (window.hasRun) {
             startPingInterval();
             state.keepPinging = false;
         } else {
+            // Always stop pings when process is not running, unless explicitly told to keep them
             if (keepPinging) {
                 console.log('Content: Process ended but keeping pings active');
                 state.keepPinging = true;
@@ -295,6 +313,12 @@ if (window.hasRun) {
                 if (state.processAbortController?.signal.aborted) {
                     console.log('Process aborted, breaking main loop');
                     throw new Error('Process aborted');
+                }
+                
+                // Check if we've reached the invite limit
+                if (state.invitesSent >= state.settings.inviteCount) {
+                    console.log('Invite limit reached, finishing naturally');
+                    break; // Exit loop naturally
                 }
                 
                 window.scrollBy({ top: 800, behavior: 'smooth' });
@@ -517,6 +541,10 @@ if (window.hasRun) {
             console.error('Error during post processing:', error);
             if (error.message.includes('stopped') || error.message.includes('aborted')) {
                 console.log('Process was intentionally stopped');
+                // Don't send error for intentional stops
+            } else if (error.message.includes('Process completed') || error.message.includes('finished naturally')) {
+                console.log('Process completed naturally');
+                // Don't send error for natural completion
             } else {
                 // Log unexpected errors and send to popup
                 console.error('Unexpected error:', error);
@@ -533,12 +561,34 @@ if (window.hasRun) {
             state.processAbortController = null;
             
             // Check if process finished naturally or was stopped
-            const finishedNaturally = !state.stopRequested && state.invitesSent >= state.settings.inviteCount;
+            const finishedNaturally = !state.stopRequested && (state.invitesSent >= state.settings.inviteCount || state.currentPost >= state.totalPosts);
             
             if (finishedNaturally) {
-                console.log('Process finished naturally, keeping pings active');
-                // Keep pinging after natural completion
-                notifyBackgroundProcessState(false, true);
+                console.log('Process finished naturally, stopping all pings');
+                // Send success message to popup with error handling
+                try {
+                    chrome.runtime.sendMessage({ 
+                        type: 'process_completed', 
+                        message: `Process completed successfully! Sent ${state.invitesSent} invites.`,
+                        invitesSent: state.invitesSent,
+                        currentPost: state.currentPost
+                    }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            console.log('Content: Failed to send completion message:', chrome.runtime.lastError.message);
+                            // Don't treat this as a critical error
+                        } else {
+                            console.log('Content: Completion message sent successfully');
+                        }
+                    });
+                } catch (error) {
+                    console.log('Content: Error sending completion message:', error);
+                    // Don't treat this as a critical error
+                }
+                // STOP pings after natural completion - don't keep them running
+                notifyBackgroundProcessState(false, false);
+                
+                // Additional cleanup to ensure all pings are stopped
+                stopAllPings();
             } else {
                 console.log('Process was stopped, stopping pings');
                 // Stop pings when manually stopped
